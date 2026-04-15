@@ -1,136 +1,81 @@
 ---
 name: sync-review
-description: Review parsed time entries and sync confirmed entries to Google Sheets via gspread and service account
+description: Review parsed time entries and save confirmed entries to the local session_log.csv for automatic Google Sheet sync
 ---
 
-# Sync & Review — Google Sheet Writer
+# Sync & Review — CSV Writer
 
-You handle the review-confirm-sync flow. After daily-log parses the user's dictation into a table, you present it for review, accept edits, and write confirmed entries to the Google Sheet.
+You handle the review-confirm-save flow. After daily-log parses the user's dictation into a table, you present it for review, accept edits, and write confirmed entries to the local CSV.
+
+**IMPORTANT: You CANNOT call Google Sheets API.** CoWork runs in a sandbox without external API access. You write to the local CSV file. A Windows Task Scheduler job on the user's machine automatically syncs CSV to Google Sheet at 9 AM, 2 PM, 8 PM, and 11:45 PM.
 
 ## Review Flow
 
 1. **Present**: Show the parsed entries table (from daily-log skill)
 2. **Confirm**: Wait for user to say "sync", "looks good", "send it", or similar
 3. **Edit**: If user says "change row 3 to..." or "row 5 should be...", update and re-present
-4. **Sync**: On confirmation, write to Google Sheet
+4. **Save**: On confirmation, append entries to the local CSV file
 
-Never write to the Sheet without explicit user confirmation.
+Never write to CSV without explicit user confirmation.
 
-## Google Sheet Connection
+## Where to Write
 
-### Requirements
-- Python library: `gspread` + `google-auth`
-- Service account JSON: `D:\Programming\daily-schedule-tracker\credentials\service-account.json`
-- Google Sheet ID: `1nZ9YBCHWB2dkptKK4mo4A4GiMSM_gB5YfE6gLvZGBg4`
+**File**: `D:\Programming\daily-schedule-tracker\data\session_log.csv`
 
-### First-Time Setup
-
-If the Google Sheet connection is not configured or credentials are missing, guide the user:
+### CSV Format
 
 ```
-To connect your Google Sheet:
-
-1. Ensure the service account JSON exists at:
-   D:\Programming\daily-schedule-tracker\credentials\service-account.json
-
-2. Share your Google Sheet with the service account email:
-   sheet-writer@dailytracker-493320.iam.gserviceaccount.com
-   (Editor access)
-
-3. The Sheet ID is configured as: 1nZ9YBCHWB2dkptKK4mo4A4GiMSM_gB5YfE6gLvZGBg4
-
-Once set up, try /sync again.
+date,session_start,session_end,duration_seconds,application,window_title,matched_project,matched_category,is_idle
 ```
 
-### Connection Code Pattern
+### Column Mapping from Parsed Table
 
-```python
-import gspread
-from google.oauth2.service_account import Credentials
+| CSV Column | Source |
+|-----------|--------|
+| date | Date (YYYY-MM-DD) |
+| session_start | Begin time (HH:MM:SS, 24h format) |
+| session_end | End time (HH:MM:SS, 24h format) |
+| duration_seconds | (end - start) in seconds |
+| application | Inferred app (e.g., "vscode", "chrome", "manual") — use "dictated" for manually dictated entries |
+| window_title | Activity description |
+| matched_project | Project name from projects.json |
+| matched_category | Category from 19-category list |
+| is_idle | False (dictated entries are never idle) |
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
+### Example Rows
 
-creds = Credentials.from_service_account_file(
-    r"D:\Programming\daily-schedule-tracker\credentials\service-account.json",
-    scopes=SCOPES
-)
-gc = gspread.authorize(creds)
-sh = gc.open_by_key("1nZ9YBCHWB2dkptKK4mo4A4GiMSM_gB5YfE6gLvZGBg4")
+```csv
+2026-04-15,10:15:00,10:45:00,1800,dictated,Played with kids outside,Personal / Non-work,Family / Kids,False
+2026-04-15,11:00:00,11:15:00,900,dictated,Set up daily tracker,Daily Schedule Tracker,Deep Work,False
 ```
 
-## Write Targets
+## Save Confirmation Message
 
-### 1. Daily Time Log (append rows)
-
-Append each confirmed entry as a new row with these columns:
-| Column | Field |
-|--------|-------|
-| A | Date (MM/DD/YYYY) |
-| B | Begin Time (h:mm AM/PM) |
-| C | End Time (h:mm AM/PM) |
-| D | Duration (formula: =C-B) |
-| E | Activity Description |
-| F | Category (from 19 categories) |
-| G | Subcategory |
-| H | Project |
-| I | Energy Level (1-5) |
-| J | Revenue Horizon (Earning/Building/Seeding/Internal/N/A) |
-| K | Work Mode |
-| L | Notes |
-
-Use `worksheet.append_rows()` for batch writing (faster than individual append_row calls).
-
-### 2. Daily Dashboard (update date row)
-
-Find or create the row for today's date in the Daily Dashboard tab. Update:
-- Total Hours (sum of durations)
-- Category breakdown (hours per category)
-- Top project
-- Revenue hours breakdown
-- Day rating (ask user at end of sync)
-
-### 3. Charts & Dashboards Data Tables
-
-Update the source data tables that feed the 8 charts:
-- Category Distribution table
-- Daily Hours Trend table
-- Revenue Focus table
-- Project Hours table
-
-These tables auto-refresh the charts when data changes.
-
-## Sync Confirmation Message
-
-After successful sync, display:
+After writing to CSV:
 
 ```
-✓ Synced [N] entries to Google Sheet
-  → Daily Time Log: [N] rows appended (rows XX-YY)
-  → Daily Dashboard: [date] row updated
-  → Total: [X]h [Y]m logged
+Saved [N] entries to local CSV.
+Auto-sync to Google Sheet at next scheduled time (9 AM, 2 PM, 8 PM, or 11:45 PM).
 
-  Revenue breakdown:
-  • Earning: Xh Ym
-  • Building: Xh Ym
-  • Seeding: Xh Ym
-  • Internal: Xh Ym
+To force an immediate sync, run in PowerShell:
+  python "D:\Programming\daily-schedule-tracker\scripts\sync_engine.py"
+
+Summary:
+  Total: [X]h [Y]m logged
+  Revenue: Earning [X]h | Building [X]h | Seeding [X]h | Internal [X]h
 ```
 
 ## Error Handling
 
-- **No credentials**: Show first-time setup guide (above)
-- **Sheet not shared**: "The Google Sheet isn't shared with the service account. Share it with sheet-writer@dailytracker-493320.iam.gserviceaccount.com"
-- **API rate limit**: "Google Sheets API rate limit hit. Wait 60 seconds and try again."
-- **Network error**: "Can't reach Google Sheets. Check your internet connection and try /sync again."
-- **Duplicate date warning**: "Entries for [date] already exist in the Sheet. Append anyway? (This won't overwrite existing rows.)"
+- **CSV file missing**: Create it with the header row, then append entries
+- **CSV file locked**: "The session log is currently locked by another process. Wait a moment and try again."
+- **Duplicate entries warning**: If entries with the same date and start time already exist in CSV, warn: "Entries for [time] already exist. Append anyway?"
 
 ## Rules
 
-- Never overwrite existing Sheet data — always append
-- Never sync without user confirmation
-- Use batch operations to minimize API calls (gspread rate limit: 60 req/min)
+- Never try to call Google Sheets API — you will get a 403 error
+- Never write to CSV without user confirmation
 - All timestamps in US Eastern (America/New_York)
-- Duration column uses a formula (=C-B), not a hardcoded value
+- Use "dictated" as the application name for manually dictated entries (vs auto-tracked entries which use app names like "chrome", "vscode")
+- Duration column is calculated as (end_time - start_time) in seconds
+- Append to CSV, never overwrite existing rows
