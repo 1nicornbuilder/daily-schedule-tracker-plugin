@@ -1,0 +1,16 @@
+{
+  "name": "daily-schedule-tracker",
+  "version": "1.0.0",
+  "title": "Daily Schedule Tracker",
+  "description": "Track your day through natural dictation. Log activities, sync to Google Sheets, review weekly patterns, and see where your time goes. 1,088 curated activities from 20 research sources. Built for founders and executives.",
+  "author": "Balaji Renukumar (@1nicornbuilder)",
+  "homepage": "https://github.com/1nicornbuilder/daily-schedule-tracker-plugin",
+  "license": "MIT",
+  "skills": ["skills/daily-log", "skills/activity-pool", "skills/sync-review", "skills/weekly-review"],
+  "commands": [
+    {"name": "log", "description": "Dictate your day — I'll parse it into structured time entries", "file": "commands/log.md"},
+    {"name": "sync", "description": "Sync entries to your Google Sheet", "file": "commands/sync.md"},
+    {"name": "review", "description": "Weekly review with targets vs actuals", "file": "commands/review.md"},
+    {"name": "report", "description": "Daily summary with revenue focus", "file": "commands/report.md"}
+  ]
+}
